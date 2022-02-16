@@ -175,7 +175,7 @@ left join
     (select * from project.dim_clients_hist where date(end_dt) = '9999-12-31') cl 
     on cl.client_id = a.client 
 where date(ft.trans_date) = '{curr_date}' 
-    and  date(ft.trans_date) > cl.passport_valid_to;""" 
+    and  ft.trans_date > cl.passport_valid_to;""" 
 
 
 
@@ -198,7 +198,7 @@ left join
     (select * from project.dim_clients_hist where date(end_dt) = '9999-12-31') cl 
     on cl.client_id = a.client 
 where date(ft.trans_date) = '{curr_date}' 
-    and  date(ft.trans_date) > a.valid_to; """
+    and  ft.trans_date > a.valid_to; """
 
 
 
@@ -218,7 +218,8 @@ left join
 left join 
     (select * from project.dim_cards_hist where date(end_dt) = '9999-12-31') c 
     on ft.card_num = c.card_num
-where date(ft.trans_date) = '{curr_date}')
+where ft.trans_date > (select min(to_timestamp(extract (epoch from (to_date('{curr_date}', 'yyyy-mm-dd'))) - 3600)) from fact_transactions)
+)
 select cte.next_trans_date fraud_dt,
     cl.passport_num passport,
     cl.last_name || ' ' || cl.first_name || ' ' || cl.patronymic fio,
@@ -240,19 +241,19 @@ where next_trans_city is not null
 
 fraud4_query = f"""
 with cte as(
-	select 
-	ft.trans_id,
-	ft.trans_date,
-	c.card_num,
-	ft.oper_type,
-	ft.oper_result,
-	ft.amt,
-	count(*) over(partition by c.card_num) trans_count 
+    select 
+    ft.trans_id,
+    ft.trans_date,
+    c.card_num,
+    ft.oper_type,
+    ft.oper_result,
+    ft.amt,
+    count(*) over(partition by c.card_num) trans_count 
 from project.fact_transactions ft 
 left join 
-	(select * from project.dim_cards_hist where date(end_dt) = '9999-12-31') c
+    (select * from project.dim_cards_hist where date(end_dt) = '9999-12-31') c
 on ft.card_num = c.card_num
-where date(ft.trans_date) = '2020-05-03'
+where ft.trans_date > (select min(to_timestamp(extract (epoch from (to_date('{curr_date}', 'yyyy-mm-dd'))) - 1200)) from fact_transactions)
 order by c.card_num, ft.trans_date
 ),
 cte2 as(
@@ -291,11 +292,11 @@ left join
     on cl.client_id = a.client
 
 where oper_result = 'Успешно' 
-	  and status_prev1 = 'Отказ'
-	  and status_prev2 = 'Отказ'
-	  and status_prev3 = 'Отказ'
-	  and amt < amt1 and amt1 < amt2 and amt2 < amt3
-	  and extract (epoch from(trans_date - trans_date3)) / 60 <= 20
+      and status_prev1 = 'Отказ'
+      and status_prev2 = 'Отказ'
+      and status_prev3 = 'Отказ'
+      and amt < amt1 and amt1 < amt2 and amt2 < amt3
+      and extract (epoch from(trans_date - trans_date3)) / 60 <= 20
 ;"""
 
 
