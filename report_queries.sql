@@ -3,52 +3,54 @@
 
 --- 1) Совершение операции при просроченном паспорте.
 
-select ft.trans_date fraud_dt, 
-	   cl.passport_num passport,
-	   cl.last_name || ' ' || cl.first_name || ' ' || cl.patronymic fio,
-	   cl.phone,
-	   '1' fraud_type,
-	   now() report_dt
+select 
+       ft.trans_date fraud_dt, 
+       cl.passport_num passport, 
+       cl.last_name || ' ' || cl.first_name || ' ' || cl.patronymic fio, 
+       cl.phone, 
+       '1' fraud_type, 
+       now() report_dt 
 from project.fact_transactions ft 
 left join 
-	(select * from project.dim_cards_hist where date(end_dt) = '9999-12-31') c
-	 on ft.card_num = c.card_num
-left join
-	(select * from project.dim_accounts_hist where date(end_dt) = '9999-12-31') a
-	on c.account_num = a.account_num
-left join
-	(select * from project.dim_clients_hist where date(end_dt) = '9999-12-31') cl
-	on cl.client_id = a.client
-where date(ft.trans_date) = '2020-05-03'
-	  and  date(ft.trans_date) > cl.passport_valid_to;
+    (select * from project.dim_cards_hist where date(end_dt) = '9999-12-31') c 
+     on ft.card_num = c.card_num 
+left join 
+    (select * from project.dim_accounts_hist where date(end_dt) = '9999-12-31') a 
+    on c.account_num = a.account_num 
+left join 
+    (select * from project.dim_clients_hist where date(end_dt) = '9999-12-31') cl 
+    on cl.client_id = a.client 
+where date(ft.trans_date) = '2020-05-02' 
+    and  ft.trans_date > cl.passport_valid_to;
 	 
 	 
 
 --- 2) Совершение операции при недействующем договоре.
 
-select ft.trans_date fraud_dt,
-	   cl.passport_num passport,
-	   cl.last_name || ' ' || cl.first_name || ' ' || cl.patronymic fio,
-	   cl.phone,
-	   '2' fraud_type,
-	   now() report_dt
+select 
+    ft.trans_date fraud_dt, 
+    cl.passport_num passport, 
+    cl.last_name || ' ' || cl.first_name || ' ' || cl.patronymic fio, 
+    cl.phone, 
+    '2' fraud_type, 
+    now() report_dt 
 from project.fact_transactions ft 
 left join 
-	(select * from project.dim_cards_hist where date(end_dt) = '9999-12-31') c
-	 on ft.card_num = c.card_num
-left join
-	(select * from project.dim_accounts_hist where date(end_dt) = '9999-12-31') a
-	on c.account_num = a.account_num
-left join
-	(select * from project.dim_clients_hist where date(end_dt) = '9999-12-31') cl
-	on cl.client_id = a.client
-where date(ft.trans_date) = '2020-05-03'
-	  and  date(ft.trans_date) > a.valid_to;
-	 
+    (select * from project.dim_cards_hist where date(end_dt) = '9999-12-31') c 
+    on ft.card_num = c.card_num 
+left join 
+    (select * from project.dim_accounts_hist where date(end_dt) = '9999-12-31') a 
+    on c.account_num = a.account_num left join 
+    (select * from project.dim_clients_hist where date(end_dt) = '9999-12-31') cl 
+    on cl.client_id = a.client 
+where date(ft.trans_date) = '2020-05-02' 
+    and  ft.trans_date > a.valid_to; 
 	 
 	 
 --- 3) Совершение операции в разных городах в течение 1 часа.
-
+--- В запросе нужно учитывать цепчки транзанзакций, которые исполнялись при переходе через полночь
+--- (т.е одна или несколько транзакций произошли в предыдущих сутках, а остальные - в текущих. 
+--- Для этого в выборку включаем строки за предыдущие сутки за 1 час (3600с) до полуночи )
 	 
 with cte as ( 
     select 
@@ -65,7 +67,8 @@ left join
 left join 
     (select * from project.dim_cards_hist where date(end_dt) = '9999-12-31') c 
     on ft.card_num = c.card_num
-where date(ft.trans_date) = '2020-05-03')
+where ft.trans_date > (select min(to_timestamp(extract (epoch from (to_date('2020-05-02', 'yyyy-mm-dd'))) - 3600)) from fact_transactions)
+)
 select cte.next_trans_date fraud_dt,
     cl.passport_num passport,
     cl.last_name || ' ' || cl.first_name || ' ' || cl.patronymic fio,
@@ -86,9 +89,11 @@ where next_trans_city is not null
 
 
 ----- 4) Попытка подбора сумм. В течение 20 минут проходит более 3х операций со следующим
---		 шаблоном – каждая последующая меньше предыдущей, при этом отклонены все, кроме последней. 
---		 Последняя операция (успешная) в такой цепочке считается мошеннической.
-
+---		 шаблоном – каждая последующая меньше предыдущей, при этом отклонены все, кроме последней. 
+---		 Последняя операция (успешная) в такой цепочке считается мошеннической.
+---      В запросе нужно учитывать цепчки транзанзакций, которые исполнялись при переходе через полночь
+---      (т.е одна или несколько транзакций произошли в предыдущих сутках, а остальные - в текущих. 
+---      Для этого в выборку включаем строки за предыдущие сутки за 20 мин (1200с) до полуночи )
 with cte as(
 	select 
 	ft.trans_id,
@@ -102,7 +107,7 @@ from project.fact_transactions ft
 left join 
 	(select * from project.dim_cards_hist where date(end_dt) = '9999-12-31') c
 on ft.card_num = c.card_num
-where date(ft.trans_date) = '2020-05-03'
+where ft.trans_date > (select min(to_timestamp(extract (epoch from (to_date('2020-05-02', 'yyyy-mm-dd'))) - 1200)) from fact_transactions)
 order by c.card_num, ft.trans_date
 ),
 cte2 as(
