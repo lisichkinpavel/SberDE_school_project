@@ -68,8 +68,16 @@ create table project.fact_transactions
  terminal    varchar   not null
 )
 with (appendonly=true)
-distributed by (trans_id);
-
+distributed by (trans_id)
+partition by range (trans_date)
+( 	partition p1 start (date '2020-05-01') inclusive,
+	partition p2 start (date '2020-05-02') inclusive,
+	partition p3 start (date '2020-05-03') inclusive
+   end (date '2020-05-04') exclusive);
+  
+--alter table project.fact_transactions drop partition p1;
+--alter table project.fact_transactions drop partition p2;
+  
 -----------------------------------------------------------------------
 
 -- creating dim tables
